@@ -1,23 +1,8 @@
 <?php
-
-header("Content-Type: application/json; charset=utf-8");
-header("Access-Control-Allow-Origin: http://127.0.0.1:5501");
-header("Access-Control-Allow-Headers: Content-Type");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-
-if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
-    http_response_code(204);
-    exit;
-}
-
-function responder($codigo, $datos) {
-    http_response_code($codigo);
-    echo json_encode($datos, JSON_UNESCAPED_UNICODE);
-    exit;
-}
+require_once __DIR__ . "/comun.php";
 
 function leerProducto() {
-    $datos = json_decode(file_get_contents("php://input"), true);
+    $datos = leerJson();
 
     if (!is_array($datos)) {
         responder(400, ["error" => "El cuerpo debe ser un JSON valido"]);
@@ -47,16 +32,6 @@ function leerProducto() {
     }
 
     return [$nombre, $datos["precio"]];
-}
-
-function validarId() {
-    $id = $_GET["id"] ?? "";
-
-    if (!is_string($id) || !ctype_digit($id) || (int) $id < 1) {
-        responder(400, ["error" => "El ID debe ser un entero positivo"]);
-    }
-
-    return (int) $id;
 }
 
 function comprobarNombreUnico($conexion, $nombre, $idExcluir = null) {
@@ -110,7 +85,7 @@ try {
                 $parametros[] = "%" . trim($_GET["nombre"]) . "%";
             }
 
-            $sql = "SELECT id, nombre, precio FROM productos";
+            $sql = "SELECT id, nombre, precio, imagen FROM productos";
 
             if ($condiciones) {
                 $sql .= " WHERE " . implode(" AND ", $condiciones);
@@ -183,16 +158,28 @@ try {
 
         case "DELETE":
             $id = validarId();
-            comprobarProducto($conexion, $id);
+
+            $consulta = $conexion->prepare(
+                "SELECT imagen FROM productos WHERE id = ?"
+            );
+            $consulta->execute([$id]);
+            $producto = $consulta->fetch(PDO::FETCH_ASSOC);
+
+            if (!$producto) {
+                responder(404, ["mensaje" => "Producto no encontrado"]);
+            }
 
             $consulta = $conexion->prepare(
                 "DELETE FROM productos WHERE id = ?"
             );
             $consulta->execute([$id]);
 
+            borrarArchivoImagen($producto["imagen"]);
+
             responder(200, [
                 "mensaje" => "Producto eliminado correctamente"
             ]);
+
 
         default:
             responder(405, ["error" => "Metodo no permitido"]);
@@ -200,6 +187,7 @@ try {
 } catch (PDOException $error) {
     responder(500, ["error" => "Error interno del servidor"]);
 }
+
 
 
 
